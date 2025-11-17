@@ -8,7 +8,7 @@ flowchart TD
     Start([User logs in])
     CheckRole{Is PRICING_SUPER_USER?}
     Dashboard[Show Pricing Approval Dashboard]
-    Filter[User applies filters (status, request type, buying area, effective date)]
+    Filter[User applies filters: status, request type, area, date]
     Requests[Display filtered pricing requests]
     Select[User selects requests for approval]
     Approve[User clicks 'Approve Selected']
@@ -16,9 +16,11 @@ flowchart TD
     UpdateStatus[ProcBuilder.SubmitPricingApproval called for each request]
     Notify[EmailRevised.SendNotification triggers email]
     End([Redirect to Dashboard])
+    Redirect[Redirect to Default.aspx]
+
     Start --> CheckRole
     CheckRole -- Yes --> Dashboard
-    CheckRole -- No --> Redirect[Redirect to Default.aspx]
+    CheckRole -- No --> Redirect
     Dashboard --> Filter
     Filter --> Requests
     Requests --> Select
@@ -90,7 +92,7 @@ flowchart TD
 ### 1.6 Alerting & Notifications
 ```mermaid
 flowchart TD
-    Action[Business event triggers (approval, decline, etc.)]
+    Action["Business event triggers (approval, decline, etc.)"]
     BuildEmail[Email.cs builds message]
     GetRecipients[Email.cs gets recipient list]
     SendSMTP[Email sent via SMTP]
