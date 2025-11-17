@@ -28,37 +28,37 @@
 ```mermaid
 graph TD
 subgraph Presentation Layer
-    UI_ASPX[ASPX Pages (.aspx, .master)]
-    JS[JavaScript/jQuery/Bootstrap]
+    UI_ASPX["ASPX Pages (.aspx, .master)"]
+    JS["JavaScript/jQuery/Bootstrap"]
     UI_ASPX --> JS
 end
 
 subgraph Business Logic Layer
-    BL_ProcBuilder[ProcBuilder.cs]
-    BL_Pacer[Pacer.cs, AddPacer.cs]
-    BL_Workflows[Approval, Validation, Notification]
+    BL_ProcBuilder["ProcBuilder.cs"]
+    BL_Pacer["Pacer.cs, AddPacer.cs"]
+    BL_Workflows["Approval, Validation, Notification"]
 end
 
 subgraph Data Access Layer
-    DAL_PCRDAL[PCRDAL.cs - Oracle DB Access]
+    DAL_PCRDAL["PCRDAL.cs - Oracle DB Access"]
 end
 
 subgraph Integration Layer
-    INT_Email[Email.cs, SMTP Server]
-    INT_FileUpload[Upload.cs, File System]
-    INT_Encryption[BouncyCastle, CryptoWrapper]
+    INT_Email["Email.cs, SMTP Server"]
+    INT_FileUpload["Upload.cs, File System"]
+    INT_Encryption["BouncyCastle, CryptoWrapper"]
 end
 
 subgraph Infrastructure
-    INF_Session[MySession.cs]
-    INF_Logging[ProcBuilder.WriteToLog]
-    INF_Config[Web.config, App.config]
+    INF_Session["MySession.cs"]
+    INF_Logging["ProcBuilder.WriteToLog"]
+    INF_Config["Web.config, App.config"]
 end
 
 UI_ASPX --> BL_ProcBuilder
 JS --> BL_Workflows
 BL_ProcBuilder --> DAL_PCRDAL
-DAL_PCRDAL --> OracleDB[(Oracle Database)]
+DAL_PCRDAL --> OracleDB[("Oracle Database")]
 BL_ProcBuilder --> INT_Email
 BL_ProcBuilder --> INT_FileUpload
 INT_Encryption --> DAL_PCRDAL
@@ -124,9 +124,9 @@ INF_Logging --> BL_ProcBuilder
 graph TD
     User --> IIS
     IIS --> PACER_App[.NET Web Forms App]
-    PACER_App --> OracleDB[(Oracle Database)]
+    PACER_App --> OracleDB["(Oracle Database)"]
     PACER_App --> SMTP[SMTP Server]
-    PACER_App --> FileSys[File System (Uploads)]
+    PACER_App --> FileSys["File System (Uploads)"]
 ```
 - **Environments:**  
   Web.Debug.config, Web.Release.config present for environment-specific settings (connection strings, etc.)
