@@ -2,186 +2,187 @@
 
 ## 1. Overview
 - **Purpose:**  
-  This document provides a comprehensive high-level architectural analysis of the PACER (Pricing Approval and Exception Request) .NET Framework application. It details the system's structure, technology stack, major components, integration points, deployment topology, and design patterns to support onboarding, modernization, maintenance, and security reviews.
+  This document provides a comprehensive high-level architectural analysis of the PACER .NET Framework application. It details the system's layers, components, technology stack, integration points, deployment topology, and major design patterns, serving as a blueprint for technical stakeholders.
 - **Scope:**  
-  The analysis covers all application layers, key business logic, data access, integration with external systems, and deployment configuration, based on explicit evidence from the codebase.
+  The analysis covers all relevant files and folders, including entry points (Global.asax), code-behind, business/data/integration logic (App_Code), configuration, UI assets, and deployment/configuration artifacts. All statements are backed by direct evidence from the codebase.
 - **Audience:**  
-  Intended for solution architects, backend developers, DevOps engineers, security reviewers, and technical managers involved in the maintenance, enhancement, or migration of the PACER application.
-
----
+  Architects, backend/frontend developers, DevOps, security reviewers, maintainers, and modernization/cloud migration teams.
 
 ## 2. Technology Stack
-| Layer/Component | Technology/Framework              | Version     | Notes                                            |
-|-----------------|----------------------------------|-------------|--------------------------------------------------|
-| .NET Framework  | .NET Framework                   | 4.8         | From PCR.csproj                                  |
-| Language        | C#                               |             | All code files are C#                            |
-| Web Framework   | ASP.NET Web Forms                |             | .aspx pages, code-behind, Global.asax            |
-| ORM/Data Access | ADO.NET (Oracle.ManagedDataAccess)| 19.10.1     | Direct SQL, stored procedures, Oracle DB         |
-| Frontend        | HTML, JavaScript, jQuery, DataTables, Bootstrap |         | No SPA; classic Web Forms with JS enhancements   |
-| Database        | Oracle                           | (19c+)      | Oracle.ManagedDataAccess, connection strings      |
-| Messaging       | Email (SMTP)                     |             | Workflow/notification via Email.cs               |
-| Caching         | None explicit                    |             | No evidence of caching framework                 |
-| Logging         | Custom (ProcBuilder.WriteToLog)  |             | No log4net/Serilog; custom log calls             |
-| Others          | NPOI, BouncyCastle, SharpZipLib, GenericParsing | See .csproj | For Excel, crypto, ZIP, CSV, etc.                |
-
----
+| Layer/Component | Technology/Framework           | Version      | Notes                                                                                   |
+|-----------------|-------------------------------|--------------|-----------------------------------------------------------------------------------------|
+| .NET Framework  | .NET Framework                | 4.8          | TargetFrameworkVersion in PCR.csproj                                                    |
+| Language        | C#                            |              | All code-behind and App_Code files are C#                                               |
+| Web Framework   | ASP.NET Web Forms             |              | Web Forms (ASPX, code-behind, Global.asax)                                              |
+| ORM/Data Access | Oracle.ManagedDataAccess       | 19.10.1      | NuGet, referenced in PCR.csproj, used in App_Code/PCRDAL.cs, ProcBuilder.cs             |
+| Frontend        | ASPX, JavaScript, jQuery, Bootstrap, DataTables | Bootstrap 4.x, jQuery 3.5.1 | Scripts and Content folders, Site.Master, DataTables CSS/JS                             |
+| Database        | Oracle                        |              | All data access via Oracle stored procedures                                            |
+| Messaging       | SMTP                          |              | Email notifications via App_Code/Email.cs                                               |
+| Caching         | None explicit                 |              | Not observed in code or config                                                          |
+| Logging         | Custom (Oracle SP)            |              | All logs written to Oracle via ProcBuilder.WriteToLog                                   |
+| Others          | BouncyCastle, CryptoWrapper, NPOI, GenericParser | BouncyCastle 1.8.6, NPOI 2.5.3 | For encryption, Excel export, CSV parsing                                               |
 
 ## 3. Architectural Layers & Components
 
 - **Layered Diagram:**  
-  ```mermaid
-  graph TD
-    UI["Presentation Layer (ASPX Pages)"]
-    BL["Business Logic Layer (App_Code)"]
-    DAL["Data Access Layer (PCRDAL)"]
-    DB["(Oracle Database)"]
-    EXT["External Services (Email, File Upload)"]
-    UI --> BL
-    BL --> DAL
-    DAL --> DB
-    BL --> EXT
-  ```
+```mermaid
+graph TD
+subgraph Presentation Layer
+    UI_ASPX[ASPX Pages (.aspx, .master)]
+    JS[JavaScript/jQuery/Bootstrap]
+    UI_ASPX --> JS
+end
+
+subgraph Business Logic Layer
+    BL_ProcBuilder[ProcBuilder.cs]
+    BL_Pacer[Pacer.cs, AddPacer.cs]
+    BL_Workflows[Approval, Validation, Notification]
+end
+
+subgraph Data Access Layer
+    DAL_PCRDAL[PCRDAL.cs - Oracle DB Access]
+end
+
+subgraph Integration Layer
+    INT_Email[Email.cs, SMTP Server]
+    INT_FileUpload[Upload.cs, File System]
+    INT_Encryption[BouncyCastle, CryptoWrapper]
+end
+
+subgraph Infrastructure
+    INF_Session[MySession.cs]
+    INF_Logging[ProcBuilder.WriteToLog]
+    INF_Config[Web.config, App.config]
+end
+
+UI_ASPX --> BL_ProcBuilder
+JS --> BL_Workflows
+BL_ProcBuilder --> DAL_PCRDAL
+DAL_PCRDAL --> OracleDB[(Oracle Database)]
+BL_ProcBuilder --> INT_Email
+BL_ProcBuilder --> INT_FileUpload
+INT_Encryption --> DAL_PCRDAL
+INF_Session --> BL_ProcBuilder
+INF_Logging --> BL_ProcBuilder
+```
 
 - **Layer Descriptions:**  
   - **Presentation Layer:**  
-    - ASP.NET Web Forms (.aspx pages, Site.Master)
-    - Handles user interaction, data display, and input forms
-    - Main folders/files: Default.aspx, Edit.aspx, Maintenance.aspx, PricingDashboard.aspx, PricingApproval.aspx, Review.aspx, Search.aspx, Upload.aspx, Calendar.aspx, Site.Master
+    - ASPX pages (Default.aspx, Request.aspx, Upload.aspx, PricingDashboard.aspx, PricingApproval.aspx, Maintenance.aspx, Edit.aspx, Review.aspx, Search.aspx, Calendar.aspx)
+    - Site.Master for layout, Content and Scripts folders for Bootstrap, jQuery, DataTables, and custom JS/CSS
   - **Business Logic Layer:**  
-    - App_Code classes encapsulating domain logic, workflow, and validation
-    - Main files: Pacer.cs, Email.cs, AddPacer.cs, EffectiveDate.cs, Style.cs, Store.cs, SKU.cs, QueryBuilder.cs, EmailRevised.cs, PRAEmail.cs, MySession.cs
+    - App_Code/ProcBuilder.cs: Orchestrates workflows, validation, approval, logging, and business rules
+    - App_Code/AddPacer.cs, Pacer.cs: Request creation and detail management
+    - App_Code/Style.cs, SKU.cs, Store.cs, EffectiveDate.cs: Domain logic for styles, SKUs, stores, dates
+    - App_Code/MySession.cs: User/session/role management
   - **Data Access Layer:**  
-    - Direct ADO.NET access to Oracle via PCRDAL.cs
-    - Executes SQL and stored procedures, handles connections and data mapping
+    - App_Code/PCRDAL.cs: Centralized Oracle DB access, command execution, and SQL helpers
+    - App_Code/QueryBuilder.cs: Bulk insert/query logic for uploads
   - **Integration Layer:**  
-    - Email notifications (Email.cs, PRAEmail.cs)
-    - File upload and export (Upload.cs, GridViewExport.cs)
-    - External libraries for crypto (BouncyCastle), Excel (NPOI), ZIP (SharpZipLib), CSV (GenericParsing)
+    - App_Code/Email.cs: SMTP email notification logic
+    - App_Code/Upload.cs: File system interaction for bulk uploads
+    - BouncyCastle, CryptoWrapper: Encryption (referenced in csproj)
   - **Infrastructure:**  
-    - Configuration via Web.config (not accessible, but referenced)
-    - Session management (MySession.cs)
-    - Logging (ProcBuilder.WriteToLog)
-    - Deployment via IIS (from .csproj)
+    - Logging via ProcBuilder.WriteToLog (Oracle SP merch_user.user_log)
+    - Configuration via Web.config (not readable, but referenced in code)
+    - Session/user context via MySession.cs
 
 - **Major Components Table:**
-  | Component Name      | Role/Purpose                                    | Layer                | Key Dependencies                | Location (Path)                          |
-  |--------------------|--------------------------------------------------|----------------------|----------------------------------|------------------------------------------|
-  | Default.aspx       | Home/dashboard UI                                | Presentation         | App_Code, PCRDAL                 | /PACER-release-MasterV3/Default.aspx     |
-  | Edit.aspx          | Edit PACER requests                              | Presentation         | App_Code, PCRDAL                 | /PACER-release-MasterV3/Edit.aspx        |
-  | Maintenance.aspx   | System/data maintenance                          | Presentation         | App_Code, PCRDAL                 | /PACER-release-MasterV3/Maintenance.aspx |
-  | PricingDashboard.aspx | Pricing dashboard/reports                     | Presentation         | App_Code, PCRDAL                 | /PACER-release-MasterV3/PricingDashboard.aspx |
-  | PricingApproval.aspx | Approve pricing requests                       | Presentation         | App_Code, PCRDAL                 | /PACER-release-MasterV3/PricingApproval.aspx |
-  | Review.aspx        | Review PACER requests                            | Presentation         | App_Code, PCRDAL                 | /PACER-release-MasterV3/Review.aspx      |
-  | Search.aspx        | Search PACER records                             | Presentation         | App_Code, PCRDAL                 | /PACER-release-MasterV3/Search.aspx      |
-  | Upload.aspx        | File upload (CSV, Excel)                         | Presentation         | App_Code, PCRDAL, NPOI           | /PACER-release-MasterV3/Upload.aspx      |
-  | Calendar.aspx      | Calendar view                                    | Presentation         | App_Code, PCRDAL                 | /PACER-release-MasterV3/Calendar.aspx    |
-  | Site.Master        | Master page/layout                               | Presentation         | -                                | /PACER-release-MasterV3/Site.Master      |
-  | Pacer.cs           | Domain entity/model for PACER requests           | Business Logic       | -                                | /App_Code/Pacer.cs                       |
-  | Email.cs           | Workflow/email notification logic                | Business Logic       | PCRDAL, ProcBuilder, MySession   | /App_Code/Email.cs                       |
-  | PCRDAL.cs          | Data access (Oracle)                             | Data Access          | Oracle.ManagedDataAccess, Crypto | /App_Code/PCRDAL.cs                      |
-  | ProcBuilder.cs     | Stored procedure helpers, logging                | Business/Infra       | PCRDAL, Logging                  | /App_Code/ProcBuilder.cs                 |
-  | Upload.cs          | File upload logic                                | Integration          | NPOI, PCRDAL                     | /App_Code/Upload.cs                      |
-  | GridViewExport.cs  | Export data to Excel                             | Integration          | NPOI                             | /App_Code/GridViewExport.cs              |
-  | MySession.cs       | Custom session management                        | Infrastructure       | System.Web.SessionState          | /App_Code/MySession.cs                   |
-  | AddPacer.cs        | Add new PACER requests                           | Business Logic       | PCRDAL, Pacer                    | /App_Code/AddPacer.cs                    |
-  | Style.cs, SKU.cs, Store.cs, StyleColors.cs | Domain models            | Business Logic       | -                                | /App_Code/                               |
-  | PRAEmail.cs, EmailRevised.cs | Specialized email logic                | Integration          | PCRDAL, ProcBuilder              | /App_Code/                               |
-
----
+| Component Name         | Role/Purpose                                  | Layer              | Key Dependencies                | Location (Path)                             |
+|-----------------------|-----------------------------------------------|--------------------|----------------------------------|---------------------------------------------|
+| Global.asax.cs        | App entry point, session/app event hooks      | Infrastructure     | ProcBuilder, MySession           | /Global.asax.cs                            |
+| Request.aspx(.cs)     | Request creation UI/logic                     | Presentation/BL    | ProcBuilder, AddPacer, MySession | /Request.aspx, /Request.aspx.cs             |
+| Upload.aspx(.cs)      | Bulk upload UI/logic                          | Presentation/BL    | QueryBuilder, ProcBuilder        | /Upload.aspx, /Upload.aspx.cs               |
+| PricingApproval.aspx(.cs) | Approval workflow UI/logic                | Presentation/BL    | ProcBuilder, Email               | /PricingApproval.aspx, /PricingApproval.aspx.cs |
+| PricingDashboard.aspx(.cs) | Dashboard/reporting UI/logic             | Presentation/BL    | ProcBuilder, GridViewExport      | /PricingDashboard.aspx, /PricingDashboard.aspx.cs |
+| App_Code/ProcBuilder.cs | Business workflow, validation, logging      | Business Logic     | PCRDAL, Oracle, MySession        | /App_Code/ProcBuilder.cs                    |
+| App_Code/PCRDAL.cs    | Oracle DB access abstraction                  | Data Access        | Oracle.ManagedDataAccess         | /App_Code/PCRDAL.cs                         |
+| App_Code/Email.cs     | Email notification logic                      | Integration        | SMTP, System.Net.Mail            | /App_Code/Email.cs                          |
+| App_Code/QueryBuilder.cs | Bulk SQL for uploads                       | Data Access        | PCRDAL, Oracle                   | /App_Code/QueryBuilder.cs                   |
+| App_Code/AddPacer.cs  | Adds request headers/details                  | Business Logic     | ProcBuilder, PCRDAL              | /App_Code/AddPacer.cs                       |
+| App_Code/MySession.cs | User/session/role management                  | Infrastructure     | HttpContext, FormsAuth           | /App_Code/MySession.cs                      |
+| App_Code/Upload.cs    | File system upload helpers                    | Integration        | System.IO, FileSystem            | /App_Code/Upload.cs                         |
+| App_Code/GridViewExport.cs | Export to Excel/CSV                      | Presentation/BL    | NPOI, System.Web.UI.WebControls  | /App_Code/GridViewExport.cs                 |
+| App_Code/Style.cs, SKU.cs, Store.cs | Domain logic for styles/SKUs/stores | Business Logic | PCRDAL, Oracle                   | /App_Code/Style.cs, /App_Code/SKU.cs, /App_Code/Store.cs |
 
 ## 4. Integration Points
 
-| Integration Name     | Type (API/DB/etc.) | Technology/Protocol     | Purpose                              | Security/Auth            | Location in Code             |
-|----------------------|--------------------|------------------------|--------------------------------------|--------------------------|------------------------------|
-| Oracle Database      | Database           | Oracle.ManagedDataAccess| Data storage and business logic      | Encrypted credentials    | /App_Code/PCRDAL.cs          |
-| Email (SMTP)         | Messaging          | SMTP/.NET SmtpClient   | Workflow notifications               | Not explicit             | /App_Code/Email.cs, PRAEmail.cs |
-| File Upload/Export   | File System        | NPOI, SharpZipLib      | Import/export Excel, CSV files       | File system permissions  | /App_Code/Upload.cs, GridViewExport.cs |
-| CryptoWrapper        | Encryption         | BouncyCastle           | Decrypt DB credentials, data         | Custom, BouncyCastle     | /App_Code/PCRDAL.cs, .csproj  |
-
----
+| Integration Name         | Type (API/DB/etc.) | Technology/Protocol      | Purpose                                   | Security/Auth         | Location in Code                |
+|-------------------------|--------------------|--------------------------|-------------------------------------------|-----------------------|----------------------------------|
+| Oracle Database         | Database           | Oracle.ManagedDataAccess | All business data, workflow, audit, logs  | DB user/connection    | App_Code/PCRDAL.cs, ProcBuilder.cs |
+| SMTP Email              | Messaging          | SMTP/.NET Mail           | Workflow notifications, errors            | SMTP relay            | App_Code/Email.cs                |
+| File System (Uploads)   | File System        | System.IO                | Bulk CSV upload, temp file storage        | NTFS ACLs             | App_Code/Upload.cs, Upload.aspx.cs|
+| Excel Export            | File Download      | NPOI, HTTP               | Data/report export to Excel/CSV           | N/A                   | App_Code/GridViewExport.cs       |
+| Encryption              | Library            | BouncyCastle, CryptoWrapper | Data encryption (if used)               | N/A                   | Referenced in csproj             |
 
 ## 5. Deployment & Infrastructure
-
 - **Hosting Model:**  
-  IIS (Internet Information Services), with support for IIS Express in development (from .csproj)
-
+  IIS (UseIIS true in csproj), ASP.NET Web Forms, Windows Authentication enabled (IISExpressWindowsAuthentication)
 - **Deployment Topology Diagram:**  
-  ```mermaid
-  graph TD
+```mermaid
+%% Deployment diagram
+graph TD
     User --> IIS
-    IIS --> WebApp[ASP.NET Web Forms App]
-    WebApp --> OracleDB[(Oracle Database)]
-    WebApp --> SMTP["SMTP Server (Email)"]
-    WebApp --> FileSys["File System (Uploads/Exports)"]
-  ```
-
+    IIS --> PACER_App[.NET Web Forms App]
+    PACER_App --> OracleDB[(Oracle Database)]
+    PACER_App --> SMTP[SMTP Server]
+    PACER_App --> FileSys[File System (Uploads)]
+```
 - **Environments:**  
-  - Dev/Test/Prod separation is implied by session flags and connection string handling (MySession.Current.LinkToProd, etc.)
-  - Web.config (not accessible) likely contains environment-specific settings
-
+  Web.Debug.config, Web.Release.config present for environment-specific settings (connection strings, etc.)
 - **Scalability/Availability:**  
-  - Standard IIS deployment; no explicit evidence of load balancing or high-availability features
-
+  Not explicitly defined, but IIS hosting supports web farm/load balancing. Oracle DB is central point.
 - **Network/Security:**  
-  - Database credentials are encrypted and decrypted at runtime
-  - Windows Authentication enabled for IIS Express (from .csproj)
-  - No explicit firewall/DMZ configuration in codebase
-
----
+  Windows Authentication (IIS), likely internal enterprise deployment. File system access for uploads. SMTP relay for emails.
 
 ## 6. Architectural Patterns & Design Decisions
-
 - **Patterns Used:**  
-  - Layered architecture (Presentation, Business Logic, Data Access)
-  - Domain Model (Pacer, Style, SKU, Store, etc.)
-  - Repository-like data access (PCRDAL), but not full Repository pattern
-  - Custom session/context management (MySession)
-  - Procedural workflow via stored procedures and helper classes
-
+  - Layered Architecture: Clear separation of Presentation, Business Logic, Data Access, Integration, Infrastructure
+  - Repository/DAO: PCRDAL abstracts DB access
+  - Procedural Workflow: ProcBuilder orchestrates business flows via stored procs
+  - Code-Behind: ASP.NET Web Forms with code-behind for UI logic
+  - Custom Logging: All logs/audits via Oracle stored procedures
 - **Key Decisions:**  
-  - Direct ADO.NET for Oracle integration (no ORM)
-  - Business logic split between code and Oracle stored procedures
-  - Heavy use of App_Code for shared logic
-  - Email as primary workflow notification mechanism
-
+  - Heavy reliance on Oracle stored procedures for business logic, validation, and workflow
+  - All exceptions and user actions logged centrally in Oracle
+  - Role-based access and session management via MySession
+  - Bulk operations (upload, export) handled via file system and batch DB calls
 - **Cross-Cutting Concerns:**  
-  - Logging: Custom log method (ProcBuilder.WriteToLog)
-  - Security: Encrypted configuration, Windows Authentication
-  - Error Handling: Try/catch blocks in DAL, but no global error handler
-  - No explicit caching or dependency injection
-
----
+  - Logging (ProcBuilder.WriteToLog)
+  - Error handling (try/catch, logs to Oracle)
+  - Security (Windows Auth, session/role checks)
+  - Email notifications (workflow status, errors)
+  - Data validation (DB-level and code-level)
 
 ## 7. Appendix
 
-- **File/Folder Inventory:**
-  | File/Folder                      | Architectural Mapping          |
-  |----------------------------------|-------------------------------|
-  | /Default.aspx, /Edit.aspx, /Maintenance.aspx, /PricingDashboard.aspx, /PricingApproval.aspx, /Review.aspx, /Search.aspx, /Upload.aspx, /Calendar.aspx | Presentation Layer (UI)        |
-  | /Site.Master                     | Presentation/Layout           |
-  | /App_Code/PCRDAL.cs              | Data Access Layer             |
-  | /App_Code/Pacer.cs, /App_Code/Style.cs, /App_Code/SKU.cs, /App_Code/Store.cs, /App_Code/StyleColors.cs | Domain Models                  |
-  | /App_Code/Email.cs, /App_Code/PRAEmail.cs, /App_Code/EmailRevised.cs | Integration/Workflow           |
-  | /App_Code/ProcBuilder.cs, /App_Code/QueryBuilder.cs | Business Logic/Infrastructure |
-  | /App_Code/Upload.cs, /App_Code/GridViewExport.cs | Integration/File Handling      |
-  | /App_Code/MySession.cs           | Infrastructure/Session        |
-  | /App_Data/                       | Data files, uploads           |
-  | /Content/, /CSS/, /Images/       | Static assets (CSS, images)   |
-  | /Scripts/                        | Frontend JS, DataTables, Bootstrap |
-  | /Global.asax, /Global.asax.cs    | Application entry/lifecycle   |
-  | /Web.config, /Web.Debug.config, /Web.Release.config | Configuration                 |
-  | /PCR.csproj                      | Project metadata, references  |
-  | /packages.config                 | NuGet packages (not accessible) |
+- **File/Folder Inventory:**  
+  - **Entry Points:**  
+    - /Global.asax, /Global.asax.cs
+    - /Default.aspx(.cs), /Request.aspx(.cs), /Upload.aspx(.cs), /PricingDashboard.aspx(.cs), /PricingApproval.aspx(.cs), /Maintenance.aspx(.cs), /Edit.aspx(.cs), /Review.aspx(.cs), /Search.aspx(.cs), /Calendar.aspx(.cs)
+  - **Business/Data/Integration Logic:**  
+    - /App_Code/ProcBuilder.cs, /App_Code/PCRDAL.cs, /App_Code/Email.cs, /App_Code/QueryBuilder.cs, /App_Code/AddPacer.cs, /App_Code/MySession.cs, /App_Code/Style.cs, /App_Code/SKU.cs, /App_Code/Store.cs, /App_Code/EffectiveDate.cs, /App_Code/Upload.cs, /App_Code/GridViewExport.cs, /App_Code/Pacer.cs, /App_Code/EmailRevised.cs, /App_Code/StyleColors.cs, /App_Code/PRAEmail.cs
+  - **Configuration:**  
+    - /PCR.csproj, /Web.config, /Web.Debug.config, /Web.Release.config, /packages.config
+  - **UI/Assets:**  
+    - /Content (Bootstrap, DataTables CSS), /Scripts (jQuery, Bootstrap, DataTables JS), /Images, /CSS
+    - /App_Data (uploaded files, temp data)
+  - **Other:**  
+    - /Properties/AssemblyInfo.cs, /PACER Documentation.docx, /PACER Help Doc.doc, various Excel templates
 
 - **Glossary:**
-  - **PACER:** Pricing Approval and Exception Request system
-  - **App_Code:** ASP.NET folder for shared code (business logic, data access)
-  - **PCRDAL:** Data Access Layer class for Oracle integration
-  - **ADO.NET:** .NET data access technology
-  - **NPOI:** .NET library for reading/writing Excel files
-  - **SMTP:** Simple Mail Transfer Protocol, used for email
-  - **IIS:** Internet Information Services, Windows web server
-  - **Master Page:** ASP.NET feature for consistent layout
-  - **Session:** User-specific state management in ASP.NET
+  - **PACER:** Pricing and Approval Change Event Request (core business object)
+  - **DMM:** Divisional Merchandise Manager (approver role)
+  - **SKU:** Stock Keeping Unit (product identifier)
+  - **Style:** Product style identifier
+  - **Chain/Store:** Organizational hierarchy for pricing events
+  - **Original/Exception:** Types of pricing requests
+  - **MPU:** Mass Price Update (bulk operation)
+  - **Effective Date:** Date when pricing change takes effect
+  - **Approval Workflow:** Multi-step process for request validation and sign-off
+  - **Bulk Upload:** Batch import of pricing data via CSV
+  - **Audit Log:** Record of user actions and errors for compliance/tracing
 
 ---
+
+*End of High-Level Architecture Document*
