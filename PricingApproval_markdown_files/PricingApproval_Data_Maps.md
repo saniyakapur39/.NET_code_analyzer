@@ -1,210 +1,129 @@
-# .NET Application Functional & Integration Documentation
+# Data Map – Pricing Approval Workflow
 
-## 1. Functional Flow Diagrams
+## 1. Document Overview
+- **Purpose:** This Data Map documents all data flows, integration points, data models, and security mechanisms for the Pricing Approval Workflow in the PACER .NET application.
+- **Scope:** Analysis covers PricingApproval.aspx/.cs, ProcBuilder.cs, MySession.cs, Email.cs, PCRDAL.cs, and relevant Oracle stored procedures and configuration.
+- **Audience:** Data Architects, Integration Engineers, Security Teams, Compliance Officers.
 
-### 1.1 Pricing Approval Workflow
+## 2. Data Flow Summary Diagram
+
 ```mermaid
 flowchart TD
-    Start([User logs in])
-    CheckRole{Is PRICING_SUPER_USER?}
-    Dashboard[Show Pricing Approval Dashboard]
-    Filter[User applies filters (status, request type, buying area, effective date)]
-    Requests[Display filtered pricing requests]
-    Select[User selects requests for approval]
-    Approve[User clicks 'Approve Selected']
-    BulkApprove[Bulk approval logic iterates requests]
-    UpdateStatus[ProcBuilder.SubmitPricingApproval called for each request]
-    Notify[EmailRevised.SendNotification triggers email]
-    End([Redirect to Dashboard])
-    Start --> CheckRole
-    CheckRole -- Yes --> Dashboard
-    CheckRole -- No --> Redirect[Redirect to Default.aspx]
-    Dashboard --> Filter
-    Filter --> Requests
-    Requests --> Select
-    Select --> Approve
-    Approve --> BulkApprove
-    BulkApprove --> UpdateStatus
-    UpdateStatus --> Notify
-    Notify --> End
+    User[User Browser] -->|HTTP POST| PricingApproval.aspx
+    PricingApproval.aspx -->|Session/User Context| MySession.cs
+    PricingApproval.aspx -->|Business Logic| ProcBuilder.cs
+    ProcBuilder.cs -->|SQL/SP| OracleDB[(Oracle DB)]
+    PricingApproval.aspx -->|Approval Action| ProcBuilder.cs
+    ProcBuilder.cs -->|Update Approval| OracleDB
+    ProcBuilder.cs -->|Log/Audit| OracleDB
+    ProcBuilder.cs -->|Approval Result| Email.cs
+    Email.cs -->|SMTP| EmailServer[(SMTP Server)]
+    OracleDB -->|Fetch Approval Data| ProcBuilder.cs
+    ProcBuilder.cs -->|Return DataTable| PricingApproval.aspx
 ```
 
-### 1.2 Order Lifecycle (Exception/Original Price Request)
-```mermaid
-flowchart TD
-    User[Buyer initiates price request]
-    Validate[ProcBuilder validates request]
-    Submit[Buyer submits request]
-    DMMApproval[DMM reviews/approves/declines]
-    PricingApproval[Pricing team reviews/approves/declines]
-    NotifyBuyer[Email notifications sent to Buyer]
-    UpdateStatus[Status updated in DB]
-    End([Request lifecycle complete])
-    User --> Validate
-    Validate --> Submit
-    Submit --> DMMApproval
-    DMMApproval --> PricingApproval
-    PricingApproval --> NotifyBuyer
-    NotifyBuyer --> UpdateStatus
-    UpdateStatus --> End
-```
+## 3. Incoming Data Flows
 
-### 1.3 Bulk Operations (Batch Approvals)
-```mermaid
-flowchart TD
-    Start([Approver logs in])
-    SelectRequests[Select multiple requests]
-    ApproveAll[Click 'Approve All']
-    Iterate[Iterate requests]
-    SubmitApproval[Submit approval for each]
-    Notify[Send notification for each]
-    End([Redirect to Dashboard])
-    Start --> SelectRequests --> ApproveAll --> Iterate --> SubmitApproval --> Notify --> End
-```
+| Entry Point                              | Source System   | Method      | Data Contract/Model         | Format     | Auth         | Transformation/Validation         | Target Module             |
+|-------------------------------------------|-----------------|-------------|----------------------------|------------|--------------|-----------------------------------|---------------------------|
+| PricingApproval.aspx                      | User Browser    | HTTP POST   | ApprovalRequest (fields)    | Form Data  | Windows Auth | Validation, Role Check            | PricingApproval.aspx.cs    |
+| PricingApproval.aspx.cs (Page_Load)       | App Context     | Session     | UserRole, UserID            | Session    | Implicit     | Authorization, Role Validation    | MySession.cs               |
+| PricingApproval.aspx.cs (getRequestsByFilters) | Oracle DB      | SQL/SP      | ApprovalDataSet             | DataTable  | DB User      | Status Filtering                  | ProcBuilder.cs             |
+| ProcBuilder.GetDashboardDetails           | Oracle DB       | SP/SQL      | DashboardDetails            | DataTable  | DB User      | User/Role Filtering               | ProcBuilder.cs             |
+| ProcBuilder.GetDropdownList               | Oracle DB       | SP/SQL      | DropdownList                | DataTable  | DB User      | List Filtering                    | ProcBuilder.cs             |
+| MySession.cs (User Context)               | Oracle DB       | SP/SQL      | UserDetails                 | DataTable  | DB User      | Session Initialization            | MySession.cs               |
 
-### 1.4 Dashboard & Reporting
-```mermaid
-flowchart TD
-    User[User logs in]
-    GetDetails[ProcBuilder.GetDashboardDetails]
-    Filter[Apply filters]
-    Display[Show dashboard grid]
-    Export[User exports data]
-    End([Dashboard interaction complete])
-    User --> GetDetails --> Filter --> Display --> Export --> End
-```
+**Sample Payloads:**
+- ApprovalRequest: `{ p_id: "12345", on_or_off: "on", ... }`
+- Session: `{ UserID: "jdoe", UserRole: "PRICING_SUPER_USER", ... }`
 
-### 1.5 User Management & Role-Based Access
-```mermaid
-flowchart TD
-    Login[User logs in]
-    GetSession[MySession loads user details]
-    CheckRole{UserRole/IsAdmin}
-    GrantAccess[Grant page access]
-    DenyAccess[Redirect to Default.aspx]
-    Login --> GetSession --> CheckRole
-    CheckRole -- Authorized --> GrantAccess
-    CheckRole -- Unauthorized --> DenyAccess
-```
+## 4. Outbound Data Flows
 
-### 1.6 Alerting & Notifications
-```mermaid
-flowchart TD
-    Action[Business event triggers (approval, decline, etc.)]
-    BuildEmail[Email.cs builds message]
-    GetRecipients[Email.cs gets recipient list]
-    SendSMTP[Email sent via SMTP]
-    Log[Log notification event]
-    Action --> BuildEmail --> GetRecipients --> SendSMTP --> Log
-```
+| Exit Point                                | Destination System | Method      | Data Contract/Model      | Format   | Auth         | Transformation/Mapping           | Source Module             |
+|--------------------------------------------|--------------------|-------------|-------------------------|----------|--------------|----------------------------------|---------------------------|
+| ProcBuilder.SubmitPricingApproval          | Oracle DB          | SP/SQL      | ApprovalStatusRecord    | SQL      | DB Creds     | Approval decision commit         | ProcBuilder.cs            |
+| ProcBuilder.WriteToLog                     | Oracle DB          | SP/SQL      | AuditLogRecord          | SQL      | DB Creds     | Audit/Access log                 | ProcBuilder.cs            |
+| EmailRevised.SendNotification              | SMTP Server        | SMTP        | ApprovalEmail           | HTML     | SMTP Config  | Map approval details to template | Email.cs                  |
 
-### 1.7 Exception Handling & Audit Logging
-```mermaid
-flowchart TD
-    Event[Application/Workflow event]
-    TryCatch[Try/Catch in DAL/Business Logic]
-    LogError[ProcBuilder.WriteToLog or PCRDAL error handling]
-    NotifyUser[Error surfaced to user]
-    Audit[Audit entry created in DB]
-    Event --> TryCatch --> LogError --> NotifyUser --> Audit
-```
+**Sample Payloads:**
+- ApprovalStatusRecord: `{ p_pricing_id: "12345", p_user_id: "jdoe", p_pricing_notes: "Approved", p_pricing_approval: "approve", ... }`
+- ApprovalEmail: HTML-formatted email with approval details, recipients, and review link.
+
+## 5. Internal Data Propagation
+
+- **Sequence:**
+    1. User accesses PricingApproval.aspx (HTTP GET/POST).
+    2. MySession.cs initializes user context from Oracle DB.
+    3. PricingApproval.aspx.cs loads dashboard and dropdowns via ProcBuilder.cs (Oracle SPs).
+    4. User filters requests; getRequestsByFilters calls ProcBuilder.GetRequestByFiltersU.
+    5. User selects approvals; btnApproveSelected_Click parses selection, calls ProcBuilder.SubmitPricingApproval for each.
+    6. Approval status update triggers EmailRevised.SendNotification.
+    7. Email.cs constructs HTML email using approval details from Oracle DB.
+    8. Emails sent via SMTP; audit logs written via ProcBuilder.WriteToLog.
+
+- **Transformation/Validation:**
+    - Role checks (MySession.Current.UserRole)
+    - DataTable mapping from Oracle RefCursor
+    - Approval selection parsing (`txtApprovalSelection.Text`)
+    - Email template population (Email.cs)
+    - Audit log sanitization (PCRDAL.CleanForInsert)
+
+## 6. Data Models & Schemas
+
+| Model Name           | Used In                | Fields (Type, Constraints)                                                                 | Source/Target          | Mapping Notes                                 |
+|----------------------|------------------------|--------------------------------------------------------------------------------------------|------------------------|-----------------------------------------------|
+| ApprovalRequest      | PricingApproval.aspx   | p_id (string), on_or_off (string), ...                                                     | Incoming (Form)        | Parsed from POST fields                       |
+| UserDetails          | MySession.cs           | DISPLAYNAME (string), EMAIL_ADDRESS (string), NETWORKID (string), USER_ROLE (string), ...  | Oracle DB → Session    | Mapped to session properties                  |
+| ApprovalDataSet      | ProcBuilder.cs         | Various approval fields (DataTable columns)                                                | Oracle DB → UI         | Filtered by status, user, role                |
+| ApprovalStatusRecord | ProcBuilder.cs         | p_pricing_id (string), p_user_id (string), p_pricing_notes (string), p_pricing_approval (string), ... | UI → Oracle DB         | Used in SubmitPricingApproval                 |
+| ApprovalEmail        | Email.cs               | Recipients (string), Subject (string), Body (HTML), ...                                   | Oracle DB → SMTP       | Constructed from approval details             |
+| AuditLogRecord       | ProcBuilder.cs         | v_report_group, v_base_report, v_user_name, v_path, v_version, v_comments, ...            | UI → Oracle DB         | Used in WriteToLog                            |
+
+**Code References:**
+- ApprovalRequest: PricingApproval.aspx.cs, btnApproveSelected_Click
+- UserDetails: MySession.cs, ProcBuilder.GetUserDetails
+- ApprovalStatusRecord: ProcBuilder.SubmitPricingApproval
+- ApprovalEmail: Email.cs, getEmailAddresses, getBuyerMessage, getDMMMessage, getPricingMessage
+
+## 7. Integration Points
+
+| Integration   | Type    | Endpoint/Connection             | Data Exchanged                  | Libraries/SDKs           | Config Details                 |
+|---------------|---------|---------------------------------|----------------------------------|--------------------------|-------------------------------|
+| Oracle DB     | SQL/SP  | Connection String (encrypted)   | ApprovalRequest, ApprovalStatus, UserDetails, AuditLog      | Oracle.ManagedDataAccess      | PCRDAL.getConnStringMerchUser, CryptoWrapper, AppSettings (Web.config) |
+| Email Server  | SMTP    | Internal SMTP Relay             | Approval Notifications (HTML)    | System.Net.Mail, Email.cs     | SMTP config (Web.config, not readable)      |
+
+## 8. Sensitive Data & Security Considerations
+
+- **Sensitive Fields:**
+    - UserID, UserEmail, UserRole, Approval notes, Audit logs
+    - Oracle DB credentials (encrypted in config)
+- **Protection:**
+    - DB credentials encrypted via CryptoWrapper, not exposed in code
+    - User authentication via Windows Auth (LOGON_USER)
+    - Session-based authorization (MySession)
+    - Audit logs written for compliance
+    - Email addresses only exposed to authorized users
+- **Compliance/Audit:**
+    - All approval actions and user accesses logged via WriteToLog
+    - Approval status changes require role validation
+
+## 9. Appendix
+
+- **Analyzed Files:**
+    - PricingApproval.aspx, PricingApproval.aspx.cs, PricingApproval.aspx.designer.cs
+    - App_Code/ProcBuilder.cs
+    - App_Code/MySession.cs
+    - App_Code/Email.cs
+    - App_Code/PCRDAL.cs
+    - Web.config (integration, credentials)
+- **Glossary:**
+    - ApprovalRequest: User-submitted approval action
+    - ApprovalStatusRecord: DB record for approval status
+    - DataTable: .NET in-memory table mapped from Oracle RefCursor
+    - SMTP: Email protocol used for notifications
+    - RefCursor: Oracle DB output for stored procedures
+    - Session: ASP.NET user context object
 
 ---
 
-## 2. Core Business Functionalities
-
-| Functionality Name         | Description                                                                 | Main Classes/Files                         | Key Business Rules/Validations                                         | Actors                    |
-|---------------------------|-----------------------------------------------------------------------------|--------------------------------------------|-----------------------------------------------------------------------|---------------------------|
-| Pricing Approval Workflow  | Approvers review, filter, and bulk approve pricing requests                 | PricingApproval.aspx.cs, ProcBuilder.cs    | Only PRICING_SUPER_USER can approve; status transitions; notifications | Pricing Approver          |
-| Order Lifecycle           | Buyer submits price change request; DMM and Pricing approve/decline         | ProcBuilder.cs, Email.cs, Review.aspx.cs   | Validation of request; multi-step approval; email notifications        | Buyer, DMM, Pricing Team  |
-| Bulk Operations           | Approvers can approve multiple requests in one action                       | PricingApproval.aspx.cs, ProcBuilder.cs    | Bulk approval iterates requests; notifications for each                | Pricing Approver          |
-| Dashboard & Reporting     | Users view, filter, and export request data                                 | PricingDashboard.aspx.cs, ProcBuilder.cs   | Data filtered by role, status, date; export to Excel                   | All Users                 |
-| User Management           | Session/user context, role-based access control                             | MySession.cs, ProcBuilder.cs               | Access checks on page load; admin roles; session initialization        | All Users, Admin          |
-| Alerting & Notifications  | Email alerts for approvals, declines, deadlines                             | Email.cs, EmailRevised.cs, ProcBuilder.cs  | Dynamic recipient lists; message content based on workflow status      | All Users                 |
-| Inventory Management      | Style/SKU reconciliation, uploads, validations                              | ProcBuilder.cs, Upload.cs                  | Validation of SKUs/styles; error handling for duplicates, invalid data | Buyer, Approver           |
-| Supplier Onboarding       | Adding visibility users, chain management                                   | ProcBuilder.cs                             | Add/delete visibility users; chain updates                             | Admin, Buyer              |
-| Exception Handling & Audit| Error catching, logging, audit trail                                        | ProcBuilder.cs, PCRDAL.cs, Global.asax.cs  | Log errors, audit user actions, surface errors to UI                   | All Users, Admin          |
-| Administrative Utilities  | Maintenance, chain updates, effective date management                       | Maintenance.aspx.cs, ProcBuilder.cs        | Admin role required; update/delete operations                          | Admin                     |
-
----
-
-## 3. Integration Touchpoints & Interface Diagrams
-
-### 3.1 Oracle Database Integration
-- **External System:** Oracle DB (PACER_PKG, PACER_EXPORT, PACER_FILE_UPLOAD)
-- **Purpose:** All business data, workflow, audit, and validation operations
-- **Data Exchanged:** Requests, approvals, user/session, styles/SKUs, logs, exports
-- **Protocol/Technology:** Oracle ManagedDataAccess (.NET), Stored Procedures
-- **Main Classes/Files:** PCRDAL.cs, ProcBuilder.cs, MySession.cs
-
-```mermaid
-sequenceDiagram
-    participant .NET_App
-    participant Oracle_DB
-    .NET_App->>Oracle_DB: ExecuteProc/GetProcDataSet (Stored Procedures)
-    Oracle_DB-->>.NET_App: DataTable/DataSet (Results)
-```
-
-### 3.2 SMTP Email Notification
-- **External System:** SMTP Email Server
-- **Purpose:** Send workflow notifications (approvals, declines, deadlines)
-- **Data Exchanged:** Email messages (HTML), recipient lists
-- **Protocol/Technology:** SMTP (System.Net.Mail or similar)
-- **Main Classes/Files:** Email.cs, EmailRevised.cs
-
-```mermaid
-sequenceDiagram
-    participant .NET_App
-    participant SMTP_Server
-    .NET_App->>SMTP_Server: Send email (message, recipients)
-    SMTP_Server-->>.NET_App: Delivery status
-```
-
-### 3.3 File System Integration (Bulk Uploads, Exports)
-- **External System:** File System (App_Data/file_upload, Excel exports)
-- **Purpose:** Upload bulk SKU/style data, export reports
-- **Data Exchanged:** CSV/XLSX files (input/output)
-- **Protocol/Technology:** File I/O (.NET System.IO)
-- **Main Classes/Files:** Upload.cs, ProcBuilder.cs, GridViewExport.cs
-
-```mermaid
-sequenceDiagram
-    participant .NET_App
-    participant File_System
-    .NET_App->>File_System: Read/Write CSV/XLSX files
-    File_System-->>.NET_App: File contents/status
-```
-
----
-
-## 4. Appendix
-
-### List of Analyzed Files
-- Global.asax.cs
-- App_Code/ProcBuilder.cs
-- App_Code/PCRDAL.cs
-- App_Code/Email.cs
-- App_Code/Upload.cs
-- App_Code/MySession.cs
-- PricingApproval.aspx.cs
-- (Other workflow pages: Review.aspx.cs, Edit.aspx.cs, Maintenance.aspx.cs, etc.)
-
-### Glossary of Business Terms
-
-| Term                | Definition                                                                 |
-|---------------------|----------------------------------------------------------------------------|
-| PACER               | Pricing Approval and Change Event Request system                            |
-| DMM                 | Divisional Merchandise Manager (approver role)                              |
-| PRICING_SUPER_USER  | User role with pricing approval privileges                                  |
-| SKU                 | Stock Keeping Unit (inventory item)                                        |
-| Style               | Product style identifier                                                    |
-| Exception Price     | Non-standard price request                                                  |
-| Original Price      | Standard/original price request                                             |
-| Bulk Approval       | Approving multiple requests in one action                                   |
-| Dashboard           | Main UI for viewing/filtering requests                                      |
-| Audit Log           | Record of user actions/events                                               |
-| Visibility User     | User with access to specific pricing events                                 |
-| Chain               | Store chain identifier                                                      |
-| Effective Date      | Date when price change takes effect                                         |
-
-
+**All findings are based on direct code and configuration analysis. No assumptions or summaries.**
