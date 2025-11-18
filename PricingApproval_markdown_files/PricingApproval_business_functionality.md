@@ -123,8 +123,8 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    UIAction[User Action (Approve/Delete)] --> ProcBuilderWriteToLog[ProcBuilder.WriteToLog()]
-    ProcBuilderWriteToLog --> OracleLogProc[Oracle merch_user.user_log]
+    UIAction["User Action (Approve/Delete)"] --> ProcBuilderWriteToLog["ProcBuilder.WriteToLog()"]
+    ProcBuilderWriteToLog --> OracleLogProc["Oracle merch_user.user_log"]
     OracleLogProc -->|Log Entry| OracleDB
 ```
 
